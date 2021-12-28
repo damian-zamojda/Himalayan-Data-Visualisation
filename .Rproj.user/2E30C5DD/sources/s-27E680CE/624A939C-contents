@@ -1,0 +1,336 @@
+---
+title: "Himalayan Data Visualisation"
+author: "Damian Żamojda 386905 \n Joanna Ceglińska 384622"
+date: "12/28/2020"
+output: html_document
+---
+
+# Introduction
+
+The mountain range of the Himalayas lies in southern Asia, and extends over 2.5 thousand kilometers. km long. It extends to the territories of Pakistan, India, China (Tibet), Nepal and Bhutan. Peaks exceeding 8,000 m above sea level form the Great Himalayas, in which the lowest mountain passes are usually above 4000 m above sea level. The highest peak is Mount Everest with a height of 8,848 m above sea level.
+
+In this paper, it was decided to work with a dataset describing thousands of expeditions towards mountain tops in the Himalayas.
+
+### Data Set Description
+
+The data was uploaded to the tidytuesday project where every week you can find a new date set to play with with data from each field.
+
+This database is a collection of records of all the expeditions that climbed the Nepalese Himalayas. The collection of expedition data was the goal of many years of records from journalist Elizabeth Hawley, based in Kathmandu.
+
+The data covers all expeditions from 1905 to 2019. The data does not include lists of low amateur expeditions, unless there were some accidents.
+
+The dataset contained over many peaks, while for the purposes of visualization, a set of peak coordinates was downloaded from Wikipedia. In the final date set, only the 26 vertices were left that managed to auto-patch coordinates. 
+
+Ultimately, the most important variables used in the work to describe the trip to the top are:
+
+* Name of the peak,
+* Gender,
+* Season,
+* A number of participants,
+* Number of employed guides,
+* What was the success and reason for ending the trip,
+* Age of participants,
+* Fatal accidents.
+
+Peaks describe variables as:
+
+* Height in meters,
+* Co-ordinates,
+* Status whether the peak has been reached,
+* When the first ascent to the summit was undertaken.
+* When the summit has been successfully reached,
+
+### R Packages Introduced
+
+```{r message=FALSE, warning=FALSE, results='hide'}
+library('tidyverse')
+library('tidytuesdayR')
+library('scales')
+library('maptools')
+library('sf')
+library('fuzzyjoin')
+library('broom')
+library('dplyr')
+library("stringr")
+library('maps')
+library('leaflet.providers')
+library("rnaturalearth")
+library('rnaturalearthdata')
+library('ggrepel')
+library('rgeos')
+library('rgdal')
+library('leaflet')
+```
+
+```{r message=FALSE, echo=FALSE, warning=FALSE, results='hide'}
+setwd("./Himalayan data")
+peaks <- read.csv("peaks.csv", sep = ',')
+expeditions <- read.csv("expeditions.csv", sep = ',')
+map_data <- read.csv("map_data.csv", sep = ',')
+members_tidied <- read.csv("members_tidied.csv", sep = ',')
+```
+
+```{r message=FALSE, echo=FALSE, warning=FALSE, results='hide'}
+#rank plot data preparation
+expeditions %>% group_by(peak_name) %>%
+  summarise(deaths = sum(member_deaths) + sum(hired_staff_deaths)) %>%
+  filter(deaths > 15) %>% 
+  select(peak_name) -> deadly_peaks
+
+expeditions %>% 
+  inner_join(deadly_peaks, by=("peak_name" = "peak_name")) %>%
+  mutate(decade = year - year %% 10) %>%
+  group_by(peak_name, decade) %>%
+  summarise(deaths = sum(member_deaths) + sum(hired_staff_deaths)) -> deaths_over_years
+
+
+deaths_over_years %>%
+    filter(decade > 1940) %>%
+    group_by(decade) %>%
+    mutate(deadliest_peak_rank = order(order(deaths, decreasing=TRUE))) -> deaths_over_years
+
+expeditions_seasons <- expeditions %>%
+  group_by(peak_name, season) %>%
+  summarize(n = sum(n()))
+```
+
+# Most well known Himalayan peaks
+
+The Himalayas mountain range is 2,500 km long and 250 km wide. In this database, the most eastern is the peak of Kirat Chuli, and the most western is Putha Hiunchuli. Among the peaks is the highest eight-thousander, Everest with a height of 8,848 m. 
+
+On the map below you can see the arrangement of the peaks and see the most popular peaks by the relatively large fields surrounding the icons of the peaks. They represent the relative total number of climbers. Thanks to this, you can recognize from a distance, among others Everest, which was visited by a total of nearly 30,000 people in order to reach the summit.
+
+The colors of the fields surrounding the peak icons and the colors of the assigned stars are the same as the potential risk of a fatal accident when attempting to climb to the top. Risk is measured by the total number of deaths divided by the total number of climbers.
+
+```{r message=FALSE, echo=FALSE, warning=FALSE}
+map_data$pct_death <- map_data$total_deaths / map_data$people_climbing
+
+peakIcons <- makeIcon(
+  iconUrl = ifelse(map_data$pct_death > 0.04, "peak_red_b3.png", 
+                   ifelse(map_data$pct_death <= 0.01, "peak_green_b3.png", "peak_b3.png")),
+  iconWidth = 30, iconHeight = 30
+  )
+
+Colors <- sapply(map_data$pct_death, function(x)
+  if(x <= 0.01) {
+    "green"
+  } else if(x > 0.04) {
+    "red"
+  } else {
+    "orange"
+})
+
+mytext <- paste(
+  "Peak name: ", map_data$peak_name,"<br/>", 
+  "Height: ", map_data$height_metres, " m <br/>", 
+  "Total deaths: ", map_data$total_deaths, "<br/>",
+  "Perc. of deaths: ", round(map_data$pct_death*100, 2), "%",
+  sep="") %>%
+  lapply(htmltools::HTML)
+
+leaflet(data = map_data) %>% setView(lat=28, lng=85, zoom=7) %>%
+  addCircleMarkers(
+    ~map_data$xlong, ~map_data$ylat, 
+    color = ~Colors,
+    stroke = FALSE, 
+    fillOpacity = 0.5,
+    radius = ~log(map_data$n_climbs)*5,
+    label = ~mytext,
+    labelOptions = labelOptions( 
+                  style = list("font-weight" = "normal", padding = "3px 8px"), 
+                  textsize = "12px", 
+                  direction = "auto")) %>%
+  addTiles() %>%
+  addProviderTiles(providers$Esri.WorldImagery) %>% 
+  addMiniMap(
+    tiles = providers$Esri.WorldPhysical,
+    toggleDisplay = TRUE) %>% 
+  addMarkers(~xlong, ~ylat, popup = ~as.character(peak_name), label = mytext,
+             icon = peakIcons)
+```
+
+The first attempts to conquer the Himalayas were made at the beginning of the 20th century, while the first successful attempt took place after almost 30 years of attempts in 1939. Until the climbing boom in the late 1940s, the time elapsed since the first attempt to reach the top is counted in decades. Only after the great popularization of mountaineering climbing in the 1950s, the summit approaches were successful in some cases even in the same year.
+
+```{r message=FALSE, echo=FALSE, warning=FALSE}
+map_data %>%
+  mutate(peak_name = reorder(peak_name, first_climb)) %>%
+  ggplot() +
+  geom_segment( aes(x=peak_name, xend=peak_name, y=first_climb, yend=first_ascent_year), color="grey") +
+  geom_point(aes(x=peak_name, y=first_climb), color=rgb(0.2,0.7,0.1,0.5), size=3 )+
+  geom_point(aes(x=peak_name, y=first_ascent_year), color=rgb(0.7,0.2,0.1,0.5), size=3 )+
+  scale_color_gradient(low="lightgreen", high="red")+
+  coord_flip()+
+  labs(title = 'First climb vs succesfull ascent year',
+       x = 'Peak name',
+       y = 'Year')+
+  theme_minimal()
+```
+
+# The most dangerous peaks in the Himalayan mountains
+
+Incredible discoveries and achievements of mankind are breathtaking, and they are accompanied by tragic accidents, including deaths. Every year fatal accidents occur in Himlaya. Despite the better preparation of the Himalayan mountaineers and extensive knowledge from previous expeditions, the forces of nature are beyond compare.
+
+The following is a quantification of which peak was the most deadly and whether it has changed over the decades. The famous Everest has been holding the infamous title of the most deadly mountain in the Himalayas for almost 5 decades.
+
+```{r message=FALSE, echo=FALSE, warning=FALSE}
+ggplot(data = deaths_over_years, aes(x = decade, y = deadliest_peak_rank, group = peak_name)) +
+  geom_line(aes(color = peak_name), size = 1.5) +
+  geom_point(aes(color = peak_name), size = 1.8, shape = 21, fill = 'white') +
+  geom_text(data = deaths_over_years %>% filter(decade == "2010"),
+            aes(label = peak_name, x = decade), angle = 15, hjust = -.07, color = "#888888", size = 3) + 
+  geom_text(data = deaths_over_years %>% filter(decade == "1950"),
+            aes(label = peak_name, x = decade), angle = 15, hjust = 1.07, color = "#888888", size = 3) +
+  scale_y_reverse(breaks = seq(1, 12)) + 
+  scale_x_discrete(expand = c(.2, .2)) +
+  labs(title = "The deadliest peaks of the Himalayas in recent decades", x = "Decade", y = "The deadliest peak in terms of total deaths") +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.ticks = element_blank(),
+        legend.position = "none")
+```
+
+On the other hand, although in terms of the number of fatal accidents was recorded during the expeditions to the summit of Everest, in relative terms to the total number of people going on the expedition, it occupies one of the lowest places in the ranking with a result of 1%.
+
+```{r message=FALSE, echo=FALSE, warning=FALSE}
+library(hrbrthemes)
+#map_data_no_ev <- map_data[map_data[, "peak_name"] != "Everest",]
+
+map_data %>%
+  mutate(peak_name = reorder(peak_name, pct_death)) %>%
+  ggplot() +
+  geom_point(aes(x=peak_name, y=pct_death, color=pct_death), size=3 )+
+  scale_color_gradient(low="lightgreen", high="red")+
+  coord_flip()+
+  labs(title = 'Total deaths as % of people climbing',
+       x = 'Peak name',
+       y = 'Share of ')+
+  theme_minimal()
+```    
+
+Unfortunately, climbing is associated with a huge danger, but what, in particular, may affect the likelihood of a fatal accident? For this purpose a generalized linear model (GLM) was introduced to discover the most important variables.
+
+The impact of the variables in the form of their estimators with confidence intervals is presented below. It is easy to imagine that the harsh conditions of winter make climbing difficult and that men may be more prone to risk.
+
+```{r message=FALSE, echo=FALSE, warning=FALSE}
+model <- members_tidied %>%  glm(died ~ year + age + sex + season + hired + oxygen_used, data = ., family = "binomial")
+
+tidied <- model %>%
+  tidy(conf.int = TRUE, exponentiate = TRUE)
+
+tidied %>%
+  filter(term != "(Intercept)") %>%
+  mutate(term = reorder(term, estimate)) %>%
+  ggplot(aes(estimate, term)) +
+  geom_point() +
+  geom_errorbarh(aes(xmin = conf.low, xmax = conf.high, color=estimate))+
+  scale_color_gradient(low="grey", high="darkgreen")+
+  theme_minimal()
+```
+
+# Who and when reaches the tops?
+
+Based on the results from the GLM, we know that the time of the year during which attempts were made to climb the Himalayas summit is of great importance. How are all documented entries into the seasons distributed?
+
+The great risk associated with the approach during winter is taken only by a few, exactly 3% of Himalayan mountaineers. Almost 96% of people climb when conditions are moderate during spring and Autumn.
+
+```{r message=FALSE, echo=FALSE, warning=FALSE}
+expeditions %>% 
+  select(season) %>% 
+  filter(season != "Unknown") -> seasons
+
+df <- expand.grid(y = 1:10, x = 1:10)
+
+categ_table <- round(table(seasons) * ((10*10)/(nrow(seasons))))
+
+df$Categories <- factor(rep(names(categ_table), categ_table))  
+
+ggplot(df, aes(x = x, y = y, fill = Categories)) + 
+  geom_tile(color = "black", size = 0.5) +
+  scale_x_continuous(expand = c(0, 0)) +
+  scale_y_continuous(expand = c(0, 0), trans = 'reverse') +
+  scale_fill_brewer(palette = "Set3") +
+  labs(title="Waffle Chart", subtitle="Himalayan Seasons distribution",
+       caption="Źródło: http://r-statistics.co/Top50-Ggplot2-Visualizations-MasterList-R-Code.html") + 
+  theme_void() +
+  theme(plot.margin = unit(c(0.2, 0.1, 0.2, .1), units = 'in'))
+
+```
+
+We can see that men constitute a much larger group of Himalaists than women. Most people took up the challenge at the age of about 30.
+
+```{r message=FALSE, echo=FALSE, warning=FALSE}
+ggplot(data = members_tidied, aes(x = age, fill = sex)) +
+    geom_histogram(aes(y = ..count../sum(..count..)), 
+             position = "dodge",
+             bins = 40)+
+  labs(title = 'Age distribution of climbers, by age and sex',
+       x = 'Age',
+       y = 'Percentage',
+       fill = 'Sex') +
+  scale_fill_manual(values = c("#F965A8", "#5E58D1"), labels = c("Female", "Male"))
+```
+
+We can check that some of the mountains are more often visited by women. Each mountain has a fatal accident percentage. Are the peaks with a higher fatality rate less frequented by women?
+
+```{r message=FALSE, echo=FALSE, warning=FALSE}
+members_women <- members_tidied %>% 
+  filter(sex == "F") %>% 
+  group_by(peak_name) %>% 
+  dplyr::summarize(n = sum(n())) 
+
+members_peak <- members_tidied %>% 
+  group_by(peak_name) %>% 
+  dplyr::summarize(total_climbers = sum(n())) 
+
+members_women <- merge(members_women, members_peak, by = "peak_name")
+
+members_women$perc_woman <- members_women$n / members_women$total_climbers %>% 
+  round(., 5)
+
+members_women %>% inner_join(map_data, by = ("peak_name" = "peak_name")) -> members_women
+
+members_women %>%
+  ggplot(aes(x = perc_woman, y = reorder(peak_name, perc_woman), fill = total_climbers)) + 
+  geom_col(fill = "#5E58D1") +
+  theme(plot.title = element_text(hjust = 0.9)) +
+  labs(title = 'Percentage of women in expeditions (by mountain name)',
+       x = 'Percentage of women and prct of deaths with dots',
+       y = 'Peak name') +
+  geom_point(aes(pct_death,peak_name))
+
+```
+
+In summary, each trip has its end. Obviously, if the goal is to reach the summit, the trip can only end in two ways. If it wasn't successful, what was the reason? What is the share of expeditions with access to oxygen?
+
+```{r message=FALSE, echo=FALSE, warning=FALSE}
+temp <- expeditions %>%
+  group_by(termination_reason) %>% 
+  dplyr::summarize(total = n()) 
+
+expeditions %>%
+  group_by(termination_reason, oxygen_used) %>% 
+  dplyr::summarize(no_terminations = n()) %>%
+  inner_join(temp, by = ("termination_reason" = "termination_reason")) %>%
+  mutate(share_of_o2_used = no_terminations/total) %>%
+    ggplot(aes(x = no_terminations, y = reorder(termination_reason, no_terminations), 
+               fill = oxygen_used)) + 
+    geom_bar(position="fill", stat="identity") +
+    labs(title = '% Usage of oxygen per Expedition termination reasons',
+       fill = 'Oxygen used',
+       x = 'Share and Number of Total expedition terminations labeled',
+       y = 'Reason') +
+  scale_y_discrete(labels = function(x) str_wrap(x, width = 40)) +
+  theme(plot.title = element_text(hjust = 1.8)) +
+  scale_fill_manual(values = c("#ea504e", "#169d3e")) +
+  geom_label(aes(x = 1, label = total), fill = 'white', 
+             position = position_dodge(1), stat="identity", color = "black", size = 2)
+
+```
+
+# Summary and bibliography
+
+The data collection as an impressive collection of Himalayan expeditions from many decades is a fascinating documentary output. The stories behind the numbers are evidence of the amazing possibilities of mankind and it will never be possible to show everything on the charts alone. As an exercise and a mine of knowledge for Data Scientist, it is a first-class treat.
+
+The data was collected via the project tidytuesday:
+
+* The Himalayan Database. https://github.com/rfordatascience/tidytuesday/tree/master/data/2020/2020-09-22
