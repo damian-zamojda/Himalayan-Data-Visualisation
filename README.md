@@ -1,4 +1,4 @@
-# Himalayan Data Visualisation
+# Himalayan Data Visualisation in R
 
 The mountain range of the Himalayas lies in southern Asia, and extends over 2.5 thousand kilometers. km long. It extends to the territories of Pakistan, India, China (Tibet), Nepal and Bhutan. Peaks exceeding 8,000 m above sea level form the Great Himalayas, in which the lowest mountain passes are usually above 4000 m above sea level. The highest peak is Mount Everest with a height of 8,848 m above sea level.
 
